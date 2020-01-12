@@ -1,0 +1,29 @@
+* Synopsis
+This is a Ruby script that downloads an iCalendar feed and converts it to an org-mode file. This can be useful e.g. to view the events of the calendar on =org-agenda=.
+
+It can be used with any URL that points to an .ics file, but has only beed tested with Outlook calendar feeds from Office365. In addition it also irons out some wrinkles of the Office365 feed, like translating Windows time zone identifiers to proper IANA identifiers.
+* Features
+- Convert iCalendar events to org entries
+- Templating for the org file and the single entries
+- Filter rules for events to be converted (e.g. filter by event title or reject all-day events)
+- Choose time period for events to convert
+- Org file is read-only by default to prevent accidental edits
+* ToDos
+- [ ] Proper implementation to fix all timezones, not just mine ;)
+- [ ] Figure out how to run the script on a regular basis
+- [ ] Enhance filter rules
+* Installation/Usage
+** Outlook / Office365
+In order to use the script, you need to publish your calendar in your [[https://outlook.office.com/calendar/options/calendar/SharedCalendars][Shared calendar settings]]. You will obtain the secret URL to your .ics file there.
+
+You can read more about it here: [[https://support.office.com/en-us/article/share-your-calendar-in-outlook-on-the-web-7ecef8ae-139c-40d9-bae2-a23977ee58d5?ui=en-US&rs=en-US&ad=US][Share your calendar in Outlook on the web]] (section "Publish your calendar").
+** Script
+#+begin_src ruby
+ICAL_TO_ORG_URL=https://outlook.office365.com/owa/calendar/<secret>/calendar.ics ruby ical_to_org.rb
+#+end_src
+* Similar libraries
+These are libraries that I used in the past and that also worked well for me.
+
+- [[https://github.com/asoroa/ical2org.py][asoroa/ical2org.py: Convert ical .ics file to org-mode]]
+- [[https://github.com/dengste/org-caldav][dengste/org-caldav: Caldav sync for Emacs orgmode]]
+- [[https://github.com/myuhe/org-gcal.el][myuhe/org-gcal.el: Org sync with Google Calendar]]
