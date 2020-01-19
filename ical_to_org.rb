@@ -15,15 +15,20 @@ gemfile do
 end
 
 URL = ENV.fetch('OUTLOOK_TO_ORG_URL')
-OUTPUT_FILE = '/Users/fabrik42/org/Cal.org'
+OUTPUT_FILE = ENV.fetch('OUTLOOK_TO_ORG_OUTPUT')
 MIN_DATE = 1.week.ago
 MAX_DATE = 10.days.from_now
 TIMEZONE = 'Europe/Berlin'
 
-# If _one_ of the rejection filters return true
+# If _one_ of the rejection reasons returns true
 # the single event is rejected and will not be part
 # of the output.
-REJECTION_FILTERS = [
+REJECTION_REASONS = [
+  # reject every event that is not confirmed
+  ->(e) { e.status != 'CONFIRMED' },
+  # reject all all-day events
+  ->(e) { e.all_day? },
+  # reject every event that is titled like a blocker
   ->(e) { e.summary == '[GTD Blocker]' }
 ].freeze
 
@@ -43,73 +48,73 @@ class OrgEvent < SimpleDelegator
     dtstart.is_a?(Icalendar::Values::Date)
   end
 
-  def confirmed?
-    status == 'CONFIRMED'
-  end
-
-  def rejected_by_filter?
-    REJECTION_FILTERS.any? { |check| check.call(self) }
-  end
-
   def duration_timestamp
     format_time = ->(dt) { dt.in_time_zone(TIMEZONE).strftime('<%Y-%m-%d %a %H:%M>') }
     [start_time, end_time].map(&format_time).join('--')
   end
+end
 
-  def render
-    ERB.new(template).result(binding)
+class OrgCalendar
+  attr_reader :events
+
+  def save
+    content = ERB.new(DATA.read).result(binding)
+    File.write(OUTPUT_FILE, content)
   end
 
-  def template
-    <<~ERB
-      * <%= summary %>
-      :PROPERTIES:
-      :ICAL_UID: <%= uid %>
-      :ICAL_LOCATION: <%= location %>
-      :ICAL_START: <%= start_time %>
-      :ICAL_END: <%= end_time %>
-      :ICAL_DTSTAMP: <%= dtstamp %>
-      :END:
-      <%= duration_timestamp %>
-      Location: <%= location %>
-    ERB
+  def load_events
+    @events = open(URL).read
+                       .then(&method(:repair_time_zones))
+                       .then(&method(:parse_ical_events))
+                       .flat_map(&method(:generate_org_events_per_occurrence))
+                       .uniq(&:uniq_key)
+                       .reject(&method(:reject_by_filter?))
+  end
+
+  private
+
+  def reject_by_filter?(event)
+    REJECTION_REASONS.any? { |check| check.call(event) }
+  end
+
+  def repair_time_zones(response)
+    response.gsub('TZID=W. Europe Standard Time', 'TZID=Europe/Berlin')
+  end
+
+  def generate_org_events_per_occurrence(ical_event)
+    ical_event.occurrences_between(MIN_DATE, MAX_DATE).map do |occurrence|
+      OrgEvent.new(ical_event, occurrence.start_time, occurrence.end_time)
+    end
+  end
+
+  def parse_ical_events(response)
+    Icalendar::Calendar.parse(response).flat_map(&:events)
   end
 end
 
-def repair_time_zones(response)
-  response.gsub('TZID=W. Europe Standard Time', 'TZID=Europe/Berlin')
+calendar = OrgCalendar.new.tap do |c|
+  c.load_events
+  c.save
 end
 
-def generate_org_events_per_occurrence(ical_event)
-  ical_event.occurrences_between(MIN_DATE, MAX_DATE).map do |occurrence|
-    OrgEvent.new(ical_event, occurrence.start_time, occurrence.end_time)
-  end
-end
+puts "Success! #{calendar.events.count} events were written to #{OUTPUT_FILE}"
 
-def parse_ical_events(response)
-  Icalendar::Calendar.parse(response).flat_map(&:events)
-end
+__END__
+# -*- buffer-read-only: t -*-
+#+TITLE: Outlook Calendar Export
+#+CATEGORY: Cal
+#+SETUPFILE: /Users/fabrik42/org/_ioki_config.org
+#+ICAL_EXPORT_DATE: <%= Time.now.iso8601 %>
 
-events = open(URL).read
-                  .then(&method(:repair_time_zones))
-                  .then(&method(:parse_ical_events))
-                  .flat_map(&method(:generate_org_events_per_occurrence))
-                  .uniq(&:uniq_key)
-                  .select(&:confirmed?)
-                  .reject(&:all_day?)
-                  .reject(&:rejected_by_filter?)
-
-File.open(OUTPUT_FILE, 'w') do |f|
-  f << <<~HEADER
-    # -*- buffer-read-only: t -*-
-    #+TITLE: Outlook Calendar Export
-    #+CATEGORY: Cal
-    #+ICAL_EXPORT_DATE: #{Time.now.iso8601}
-    #+SETUPFILE: /Users/fabrik42/org/_ioki_config.org
-
-  HEADER
-
-  events.each { |e| f << e.render }
-end
-
-puts "Success! #{events.count} events were written to #{OUTPUT_FILE}"
+<% events.each do |event| %>
+* <%= event.summary %>
+:PROPERTIES:
+:ICAL_UID: <%= event.uid %>
+:ICAL_LOCATION: <%= event.location %>
+:ICAL_START: <%= event.start_time %>
+:ICAL_END: <%= event.end_time %>
+:ICAL_DTSTAMP: <%= event.dtstamp %>
+:END:
+<%= event.duration_timestamp %>
+Location: <%= event.location %>
+<% end %>
