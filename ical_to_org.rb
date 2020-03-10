@@ -78,7 +78,9 @@ class OrgCalendar
   end
 
   def repair_time_zones(response)
-    response.gsub('TZID=W. Europe Standard Time', 'TZID=Europe/Berlin')
+    response
+      .gsub('TZID=W. Europe Standard Time', 'TZID=Europe/Berlin')
+      .gsub('TZID=GMT Standard Time', 'TZID=Europe/London')
   end
 
   def generate_org_events_per_occurrence(ical_event)
